@@ -8,7 +8,7 @@
 <meta name="referrer"
       content="strict-origin-when-cross-origin">
 
-<title>SL Club Video Wall</title>
+<title>Second Life Club Player</title>
 
 <style>
 html, body {
@@ -16,26 +16,18 @@ html, body {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #000;
+    background: black;
 }
 
-iframe {
+#player {
     width: 100%;
     height: 100%;
-    border: 0;
-    display: block;
 }
 </style>
 </head>
 
 <body>
-<iframe
-    id="player"
-    title="Club Video"
-    referrerpolicy="strict-origin-when-cross-origin"
-    allow="autoplay; encrypted-media; fullscreen"
-    allowfullscreen>
-</iframe>
+<div id="player"></div>
 
 <script>
 const params = new URLSearchParams(
@@ -44,29 +36,66 @@ const params = new URLSearchParams(
 
 const validID = /^[A-Za-z0-9_-]{11}$/;
 
-const requested = (
+const videos = (
     params.get("list") || "M7lc1UVf-VE"
-).split(",");
+).split(",")
+ .map(v => v.trim())
+ .filter(v => validID.test(v))
+ .slice(0, 30);
 
-const ids = requested
-    .map(id => id.trim())
-    .filter(id => validID.test(id))
-    .slice(0, 30);
+let current = 0;
+let player;
 
-if (ids.length > 0) {
-    const url = new URL(
-        "https://www.youtube.com/embed/" + ids[0]
-    );
+function onYouTubeIframeAPIReady() {
+    if (!videos.length) return;
 
-    url.searchParams.set("autoplay", "1");
-    url.searchParams.set("controls", "0");
-    url.searchParams.set("playsinline", "1");
-    url.searchParams.set("loop", "1");
-    url.searchParams.set("playlist", ids.join(","));
+    player = new YT.Player("player", {
+        width: "100%",
+        height: "100%",
+        videoId: videos[0],
 
-    document.getElementById("player").src =
-        url.toString();
+        playerVars: {
+            autoplay: 1,
+            controls: 0,
+            playsinline: 1,
+            rel: 0,
+            origin: window.location.origin
+        },
+
+        events: {
+            onReady: function(event) {
+                event.target.playVideo();
+            },
+
+            onStateChange: function(event) {
+                if (event.data === YT.PlayerState.ENDED) {
+                    nextVideo();
+                }
+            },
+
+            onError: function(event) {
+                console.log(
+                    "YouTube-Fehler:", event.data
+                );
+                nextVideo();
+            }
+        }
+    });
 }
+
+function nextVideo() {
+    if (!videos.length) return;
+
+    current = (current + 1) % videos.length;
+
+    player.loadVideoById(videos[current]);
+}
+
+// YouTube-IFrame-API laden
+const tag = document.createElement("script");
+tag.src = "https://www.youtube.com/iframe_api";
+
+document.head.appendChild(tag);
 </script>
 </body>
 </html>
