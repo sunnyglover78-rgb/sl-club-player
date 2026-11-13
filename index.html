@@ -2,67 +2,71 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
+<meta name="referrer"
+      content="strict-origin-when-cross-origin">
 
-  <meta name="referrer"
-        content="strict-origin-when-cross-origin">
+<title>SL Club Video Wall</title>
 
-  <title>Second Life Club Video Player</title>
+<style>
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+}
 
-  <style>
-    html, body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: black;
-    }
-
-    iframe {
-      display: block;
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-  </style>
+iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+</style>
 </head>
 
 <body>
-  <iframe
-    id="video"
+<iframe
+    id="player"
     title="Club Video"
     referrerpolicy="strict-origin-when-cross-origin"
     allow="autoplay; encrypted-media; fullscreen"
     allowfullscreen>
-  </iframe>
+</iframe>
 
-  <script>
-    const params = new URLSearchParams(
-      window.location.search
+<script>
+const params = new URLSearchParams(
+    window.location.search
+);
+
+const validID = /^[A-Za-z0-9_-]{11}$/;
+
+const requested = (
+    params.get("list") || "M7lc1UVf-VE"
+).split(",");
+
+const ids = requested
+    .map(id => id.trim())
+    .filter(id => validID.test(id))
+    .slice(0, 30);
+
+if (ids.length > 0) {
+    const url = new URL(
+        "https://www.youtube.com/embed/" + ids[0]
     );
 
-    const id = params.get("v") || "M7lc1UVf-VE";
-    const loop = params.get("loop") !== "0";
+    url.searchParams.set("autoplay", "1");
+    url.searchParams.set("controls", "0");
+    url.searchParams.set("playsinline", "1");
+    url.searchParams.set("loop", "1");
+    url.searchParams.set("playlist", ids.join(","));
 
-    if (/^[A-Za-z0-9_-]{11}$/.test(id)) {
-      const url = new URL(
-        "https://www.youtube.com/embed/" + id
-      );
-
-      url.searchParams.set("autoplay", "0");
-      url.searchParams.set("controls", "0");
-      url.searchParams.set("playsinline", "1");
-      url.searchParams.set("loop", loop ? "1" : "0");
-
-      if (loop) {
-        url.searchParams.set("playlist", id);
-      }
-
-      document.getElementById("video").src =
+    document.getElementById("player").src =
         url.toString();
-    }
-  </script>
+}
+</script>
 </body>
 </html>
