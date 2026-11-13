@@ -3,137 +3,159 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width, initial-scale=1">
-<meta name="referrer"
-      content="strict-origin-when-cross-origin">
-<title>SL Club Player Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 
 <style>
 html, body {
-    margin: 0;
-    width: 100%;
-    height: 100%;
-    background: black;
-    overflow: hidden;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: black;
+  overflow: hidden;
 }
 
 #player {
-    width: 100%;
-    height: 100%;
+  width: 100%;
+  height: 100%;
 }
 
 #status {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 10px;
-    color: white;
-    background: rgba(0,0,0,0.8);
-    font: 16px Arial, sans-serif;
-    z-index: 10;
-    pointer-events: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  color: white;
+  background: rgba(0,0,0,0.75);
+  font: 14px Arial, sans-serif;
+  z-index: 10;
+  pointer-events: none;
 }
 </style>
 </head>
 
 <body>
+
 <div id="player"></div>
 <div id="status">Player wird geladen ...</div>
 
 <script>
-const params = new URLSearchParams(
-    window.location.search
-);
+const params = new URLSearchParams(window.location.search);
 
-const videos = (
-    params.get("list") || "M7lc1UVf-VE"
-).split(",")
- .map(v => v.trim())
- .filter(v => /^[A-Za-z0-9_-]{11}$/.test(v));
+const videos = (params.get("list") ||
+  "BLqOAaTQ3bE,akI1ETukbCk,d28u5sSasW8")
+  .split(",")
+  .map(v => v.trim())
+  .filter(v => /^[A-Za-z0-9_-]{11}$/.test(v));
 
 let current = 0;
-let player;
+let player = null;
 let switching = false;
+let lastTime = 0;
+let stuck = 0;
 
 function status(text) {
-    document.getElementById("status").textContent =
-        text;
+  document.getElementById("status").textContent = text;
 }
 
 function nextVideo() {
-    if (!player || switching) return;
+  if (!player || switching || videos.length === 0) return;
 
-    switching = true;
+  switching = true;
+  current = (current + 1) % videos.length;
+  lastTime = 0;
+  stuck = 0;
 
-    current = (current + 1) % videos.length;
+  status("Wechsel zu Video " + (current + 1));
 
-    status("Wechsel zu Video " + (current + 1));
+  player.loadVideoById(videos[current]);
 
-    player.loadVideoById(videos[current]);
-
-    setTimeout(() => {
-        switching = false;
-    }, 2000);
+  setTimeout(function() {
+    switching = false;
+  }, 1500);
 }
 
 function onYouTubeIframeAPIReady() {
-    if (!videos.length) {
-        status("Keine Videos gefunden");
-        return;
-    }
+  if (videos.length === 0) {
+    status("Keine Videos gefunden");
+    return;
+  }
 
-    status("API bereit - " + videos.length + " Videos");
+  player = new YT.Player("player", {
+    width: "100%",
+    height: "100%",
+    videoId: videos[0],
 
-    player = new YT.Player("player", {
-        width: "100%",
-        height: "100%",
-        videoId: videos[0],
+    playerVars: {
+      autoplay: 1,
+      controls: 0,
+      playsinline: 1,
+      rel: 0,
+      origin: window.location.origin
+    },
 
-        playerVars: {
-            autoplay: 1,
-            controls: 0,
-            playsinline: 1,
-            origin: window.location.origin
-        },
+    events: {
+      onReady: function(e) {
+        status("Video 1 bereit");
+        e.target.playVideo();
+      },
 
-        events: {
-            onReady: function(event) {
-                status("Video 1 bereit");
-                event.target.playVideo();
-            },
-
-            onStateChange: function(event) {
-                if (event.data === YT.PlayerState.PLAYING) {
-                    status(
-                        "Video " + (current + 1)
-                        + " laeuft"
-                    );
-                }
-
-                if (event.data === YT.PlayerState.ENDED) {
-                    status("Video beendet - Wechsel");
-                    nextVideo();
-                }
-            },
-
-            onError: function(event) {
-                status(
-                    "YouTube Fehler " + event.data
-                );
-            },
-
-            onAutoplayBlocked: function() {
-                status("Autoplay blockiert");
-            }
+      onStateChange: function(e) {
+        if (e.data === YT.PlayerState.PLAYING) {
+          status("Video " + (current + 1) + " laeuft");
         }
-    });
+
+        if (e.data === YT.PlayerState.ENDED) {
+          nextVideo();
+        }
+      },
+
+      onError: function(e) {
+        status("YouTube Fehler " + e.data);
+      },
+
+      onAutoplayBlocked: function() {
+        status("Autoplay blockiert");
+      }
+    }
+  });
 }
+
+// Zusätzliche Prüfung für Shorts,
+// falls YouTube das Videoende nicht meldet.
+setInterval(function() {
+  if (!player || switching) return;
+
+  const duration = player.getDuration();
+  const time = player.getCurrentTime();
+  const state = player.getPlayerState();
+
+  if (!duration || !Number.isFinite(time)) return;
+
+  // Kurz vor dem regulären Videoende wechseln
+  if (time > 0 && duration - time < 0.8) {
+    nextVideo();
+    return;
+  }
+
+  // Erkennen, wenn ein Short von selbst neu beginnt
+  if (
+    state === YT.PlayerState.PLAYING &&
+    lastTime > 2 &&
+    time < lastTime - 2
+  ) {
+    nextVideo();
+    return;
+  }
+
+  lastTime = time;
+}, 250);
 
 const script = document.createElement("script");
 script.src = "https://www.youtube.com/iframe_api";
 document.head.appendChild(script);
 </script>
+
 </body>
 </html>
