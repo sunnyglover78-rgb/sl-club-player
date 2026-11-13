@@ -7,47 +7,84 @@
       content="width=device-width, initial-scale=1">
 <meta name="referrer"
       content="strict-origin-when-cross-origin">
-
-<title>Second Life Club Player</title>
+<title>SL Club Player Test</title>
 
 <style>
 html, body {
     margin: 0;
     width: 100%;
     height: 100%;
-    overflow: hidden;
     background: black;
+    overflow: hidden;
 }
 
 #player {
     width: 100%;
     height: 100%;
 }
+
+#status {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px;
+    color: white;
+    background: rgba(0,0,0,0.8);
+    font: 16px Arial, sans-serif;
+    z-index: 10;
+    pointer-events: none;
+}
 </style>
 </head>
 
 <body>
 <div id="player"></div>
+<div id="status">Player wird geladen ...</div>
 
 <script>
 const params = new URLSearchParams(
     window.location.search
 );
 
-const validID = /^[A-Za-z0-9_-]{11}$/;
-
 const videos = (
     params.get("list") || "M7lc1UVf-VE"
 ).split(",")
  .map(v => v.trim())
- .filter(v => validID.test(v))
- .slice(0, 30);
+ .filter(v => /^[A-Za-z0-9_-]{11}$/.test(v));
 
 let current = 0;
 let player;
+let switching = false;
+
+function status(text) {
+    document.getElementById("status").textContent =
+        text;
+}
+
+function nextVideo() {
+    if (!player || switching) return;
+
+    switching = true;
+
+    current = (current + 1) % videos.length;
+
+    status("Wechsel zu Video " + (current + 1));
+
+    player.loadVideoById(videos[current]);
+
+    setTimeout(() => {
+        switching = false;
+    }, 2000);
+}
 
 function onYouTubeIframeAPIReady() {
-    if (!videos.length) return;
+    if (!videos.length) {
+        status("Keine Videos gefunden");
+        return;
+    }
+
+    status("API bereit - " + videos.length + " Videos");
 
     player = new YT.Player("player", {
         width: "100%",
@@ -58,44 +95,45 @@ function onYouTubeIframeAPIReady() {
             autoplay: 1,
             controls: 0,
             playsinline: 1,
-            rel: 0,
             origin: window.location.origin
         },
 
         events: {
             onReady: function(event) {
+                status("Video 1 bereit");
                 event.target.playVideo();
             },
 
             onStateChange: function(event) {
+                if (event.data === YT.PlayerState.PLAYING) {
+                    status(
+                        "Video " + (current + 1)
+                        + " laeuft"
+                    );
+                }
+
                 if (event.data === YT.PlayerState.ENDED) {
+                    status("Video beendet - Wechsel");
                     nextVideo();
                 }
             },
 
             onError: function(event) {
-                console.log(
-                    "YouTube-Fehler:", event.data
+                status(
+                    "YouTube Fehler " + event.data
                 );
-                nextVideo();
+            },
+
+            onAutoplayBlocked: function() {
+                status("Autoplay blockiert");
             }
         }
     });
 }
 
-function nextVideo() {
-    if (!videos.length) return;
-
-    current = (current + 1) % videos.length;
-
-    player.loadVideoById(videos[current]);
-}
-
-// YouTube-IFrame-API laden
-const tag = document.createElement("script");
-tag.src = "https://www.youtube.com/iframe_api";
-
-document.head.appendChild(tag);
+const script = document.createElement("script");
+script.src = "https://www.youtube.com/iframe_api";
+document.head.appendChild(script);
 </script>
 </body>
 </html>
