@@ -5,86 +5,189 @@
 <meta charset="UTF-8">
 <meta name="viewport"
       content="width=device-width, initial-scale=1">
+
 <title>Second Life DJ MP4 Player</title>
+
 <style>
+* {
+  box-sizing: border-box;
+}
+
 html, body {
   margin: 0;
+  padding: 0;
   width: 100%;
   height: 100%;
-  background: black;
   overflow: hidden;
+  background: black;
+  font-family: Arial, sans-serif;
 }
-video {
+
+/* Video ohne schwarze Balken */
+#player {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  background: black;
 }
+
+/* Kleine Statusanzeige */
+#status {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  padding: 8px 12px;
+  color: #D4AF37;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid #D4AF37;
+  border-radius: 5px;
+  font-size: 15px;
+}
+
+/* Startknopf, falls Autoplay blockiert wird */
 #start {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  z-index: 20;
   padding: 16px 24px;
+  background: #111;
+  color: #D4AF37;
+  border: 2px solid #D4AF37;
+  border-radius: 8px;
   font-size: 20px;
+  cursor: pointer;
 }
-#status {
+
+/* Knopf fuer naechstes Video */
+#next {
   position: fixed;
-  top: 10px;
-  left: 10px;
-  color: white;
-  background: rgba(0,0,0,.75);
-  padding: 8px;
-  font-family: Arial, sans-serif;
+  right: 15px;
+  bottom: 15px;
+  z-index: 10;
+  padding: 10px 18px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #D4AF37;
+  border: 1px solid #D4AF37;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+button[hidden] {
+  display: none;
 }
 </style>
 </head>
+
 <body>
 
-<video id="player" autoplay playsinline></video>
-<div id="status">Player startet...</div>
-<button id="start" hidden>▶ Start</button>
+<video id="player"
+       autoplay
+       playsinline
+       preload="auto">
+</video>
+
+<div id="status">DJ-Player wird geladen...</div>
+
+<button id="start" type="button" hidden>
+  ▶ Wiedergabe starten
+</button>
+
+<button id="next" type="button">
+  NEXT ▶
+</button>
 
 <script>
+"use strict";
+
+/* AUTOMATISCHE PLAYLIST */
+
 const playlist = [
   "video1.mp4",
-  "video2.mp4"
+  "video2.mp4",
+  "video3.mp4",
+  "video4.mp4"
 ];
+
+/* PLAYER */
 
 const player = document.getElementById("player");
 const status = document.getElementById("status");
 const start = document.getElementById("start");
+const next = document.getElementById("next");
 
 let current = 0;
 
-async function playCurrent() {
-  player.src = playlist[current];
-  player.load();
-
+function updateStatus(message = "") {
   status.textContent =
-    "Video " + (current + 1) +
-    " / " + playlist.length;
+    "VIDEO " + (current + 1) +
+    " / " + playlist.length +
+    (message ? " | " + message : "");
+}
 
+/* WIEDERGABE STARTEN */
+
+async function tryPlay() {
   try {
     await player.play();
     start.hidden = true;
-  } catch (e) {
+    updateStatus("Wiedergabe");
+  } catch (error) {
     start.hidden = false;
-    status.textContent += " - Play klicken";
+    updateStatus("Play erforderlich");
   }
 }
 
-player.addEventListener("ended", () => {
-  current = (current + 1) % playlist.length;
-  playCurrent();
+/* VIDEO LADEN */
+
+function playVideo(index) {
+  if (playlist.length === 0) {
+    status.textContent = "Keine Videos vorhanden";
+    return;
+  }
+
+  current = index % playlist.length;
+
+  player.src = playlist[current];
+  player.load();
+
+  updateStatus("Lade...");
+  tryPlay();
+}
+
+/* NAECHSTES VIDEO */
+
+function nextVideo() {
+  playVideo((current + 1) % playlist.length);
+}
+
+/* AUTOMATISCHER WECHSEL NACH VIDEOENDE */
+
+player.addEventListener("ended", nextVideo);
+
+/* FEHLERANZEIGE */
+
+player.addEventListener("error", function() {
+  updateStatus("MP4 konnte nicht geladen werden");
 });
 
-start.addEventListener("click", () => {
-  player.play().then(() => {
-    start.hidden = true;
-  }).catch(() => {});
-});
+/* STARTKNOPF */
 
-playCurrent();
+start.addEventListener("click", tryPlay);
+
+/* NEXT-KNOPF */
+
+next.addEventListener("click", nextVideo);
+
+/* AUTOMATISCH STARTEN */
+
+playVideo(0);
+
 </script>
 
 </body>
