@@ -4,154 +4,88 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport"
- content="width=device-width, initial-scale=1">
-<title>SL Club MEGA Playlist</title>
-
+      content="width=device-width, initial-scale=1">
+<title>Second Life DJ MP4 Player</title>
 <style>
-html,body {
-  margin:0;
-  width:100%;
-  height:100%;
-  overflow:hidden;
-  background:#000;
-  font-family:Arial,sans-serif;
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: black;
+  overflow: hidden;
 }
-#player {
-  position:absolute;
-  width:100%;
-  height:100%;
-  border:0;
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+#start {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 16px 24px;
+  font-size: 20px;
 }
 #status {
-  position:fixed;
-  top:10px;
-  left:10px;
-  z-index:10;
-  padding:10px;
-  background:rgba(0,0,0,.8);
-  color:white;
-  font-size:17px;
-}
-#next {
-  position:fixed;
-  right:10px;
-  bottom:10px;
-  z-index:10;
-  padding:12px 20px;
-  color:white;
-  background:#222;
-  border:1px solid #888;
-  cursor:pointer;
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  color: white;
+  background: rgba(0,0,0,.75);
+  padding: 8px;
+  font-family: Arial, sans-serif;
 }
 </style>
 </head>
-
 <body>
 
-<iframe id="player"
- allow="autoplay; fullscreen; encrypted-media"
- allowfullscreen>
-</iframe>
-
-<div id="status"></div>
-<button id="next">NEXT ▶</button>
+<video id="player" autoplay playsinline></video>
+<div id="status">Player startet...</div>
+<button id="start" hidden>▶ Start</button>
 
 <script>
-"use strict";
-
-const params =
-  new URLSearchParams(location.search);
-
-const fallback = [
-  {
-    url: "https://mega.nz/embed/VM5AGDII#ElaIkT1PrvueW8huRDh1lbDeSYmXiy3XytGGZSfMIw4",
-    duration: 15
-  },
-  {
-    url: "https://mega.nz/embed/5ZBTjLZa#0uNGhsH-jMMhLjDkIaPo2hlShprMDoFw4wY2uoIW0yI",
-    duration: 15
-  }
+const playlist = [
+  "video1.mp4",
+  "video2.mp4"
 ];
 
-const raw = params.get("list");
-
-const videos = raw === null
-  ? fallback
-  : raw.split("|").map(entry => {
-      const pos = entry.lastIndexOf("@");
-      if (pos < 0) return null;
-
-      const url = entry.slice(0,pos);
-      const duration = Number(entry.slice(pos+1));
-
-      if (
-        !/^https:\/\/mega\.nz\/(file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+$/.test(url)
-        || !Number.isFinite(duration)
-        || duration < 1
-      ) return null;
-
-      return {
-        url: url.replace("/file/","/embed/"),
-        duration: Math.floor(duration)
-      };
-    }).filter(Boolean);
-
-const frame = document.getElementById("player");
+const player = document.getElementById("player");
 const status = document.getElementById("status");
+const start = document.getElementById("start");
 
 let current = 0;
-let timer = null;
-let interval = null;
-let endTime = 0;
 
-function showStatus() {
-  const seconds = Math.max(
-    0,
-    Math.ceil((endTime-Date.now())/1000)
-  );
+async function playCurrent() {
+  player.src = playlist[current];
+  player.load();
 
   status.textContent =
-    "Video " + (current+1) +
-    " / " + videos.length +
-    " | Wechsel in " + seconds + "s";
-}
+    "Video " + (current + 1) +
+    " / " + playlist.length;
 
-function playVideo() {
-  clearTimeout(timer);
-  clearInterval(interval);
-
-  if (!videos.length) {
-    status.textContent = "Keine Videos vorhanden";
-    return;
+  try {
+    await player.play();
+    start.hidden = true;
+  } catch (e) {
+    start.hidden = false;
+    status.textContent += " - Play klicken";
   }
-
-  const video = videos[current];
-
-  // MEGA-Link nicht veraendern
-  frame.src = video.url;
-
-  endTime = Date.now() +
-    video.duration * 1000;
-
-  showStatus();
-
-  interval = setInterval(showStatus, 500);
-
-  timer = setTimeout(nextVideo,
-    video.duration * 1000);
 }
 
-function nextVideo() {
-  if (!videos.length) return;
+player.addEventListener("ended", () => {
+  current = (current + 1) % playlist.length;
+  playCurrent();
+});
 
-  current = (current+1) % videos.length;
-  playVideo();
-}
+start.addEventListener("click", () => {
+  player.play().then(() => {
+    start.hidden = true;
+  }).catch(() => {});
+});
 
-document.getElementById("next")
-  .addEventListener("click",nextVideo);
-
-playVideo();
+playCurrent();
 </script>
+
 </body>
 </html>
