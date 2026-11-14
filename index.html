@@ -4,226 +4,154 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport"
-      content="width=device-width, initial-scale=1">
-
-<title>SL Club MEGA Auto Player</title>
+ content="width=device-width, initial-scale=1">
+<title>SL Club MEGA Playlist</title>
 
 <style>
-* {
-  box-sizing: border-box;
+html,body {
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#000;
+  font-family:Arial,sans-serif;
 }
-
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: black;
-  font-family: Arial, sans-serif;
-}
-
 #player {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: none;
-  background: black;
+  position:absolute;
+  width:100%;
+  height:100%;
+  border:0;
 }
-
 #status {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 100;
-  color: white;
-  background: rgba(0,0,0,0.8);
-  padding: 10px 15px;
-  border-radius: 5px;
-  font-size: 17px;
-  pointer-events: none;
+  position:fixed;
+  top:10px;
+  left:10px;
+  z-index:10;
+  padding:10px;
+  background:rgba(0,0,0,.8);
+  color:white;
+  font-size:17px;
 }
-
 #next {
-  position: fixed;
-  right: 15px;
-  bottom: 15px;
-  z-index: 100;
-  padding: 12px 20px;
-  background: rgba(0,0,0,0.85);
-  color: white;
-  border: 1px solid #888;
-  border-radius: 5px;
-  font-size: 18px;
-  cursor: pointer;
-}
-
-#next:hover {
-  background: #333;
+  position:fixed;
+  right:10px;
+  bottom:10px;
+  z-index:10;
+  padding:12px 20px;
+  color:white;
+  background:#222;
+  border:1px solid #888;
+  cursor:pointer;
 }
 </style>
 </head>
 
 <body>
 
-<iframe
-  id="player"
-  allow="autoplay; fullscreen; encrypted-media"
-  allowfullscreen>
+<iframe id="player"
+ allow="autoplay; fullscreen; encrypted-media"
+ allowfullscreen>
 </iframe>
 
-<div id="status">Player wird geladen...</div>
-
-<button id="next" type="button">
-  NEXT ▶
-</button>
+<div id="status"></div>
+<button id="next">NEXT ▶</button>
 
 <script>
 "use strict";
 
-const params = new URLSearchParams(
-  window.location.search
-);
+const params =
+  new URLSearchParams(location.search);
 
-// Eintrag: MEGA-LINK@SEKUNDEN
-// Mehrere Eintraege mit | trennen
+const fallback = [
+  {
+    url: "https://mega.nz/embed/VM5AGDII#ElaIkT1PrvueW8huRDh1lbDeSYmXiy3XytGGZSfMIw4",
+    duration: 15
+  },
+  {
+    url: "https://mega.nz/embed/5ZBTjLZa#0uNGhsH-jMMhLjDkIaPo2hlShprMDoFw4wY2uoIW0yI",
+    duration: 15
+  }
+];
 
-const rawList = params.get("list") || "";
+const raw = params.get("list");
 
-const videos = rawList
-  .split("|")
-  .map(entry => {
-    entry = entry.trim();
+const videos = raw === null
+  ? fallback
+  : raw.split("|").map(entry => {
+      const pos = entry.lastIndexOf("@");
+      if (pos < 0) return null;
 
-    const pos = entry.lastIndexOf("@");
+      const url = entry.slice(0,pos);
+      const duration = Number(entry.slice(pos+1));
 
-    if (pos === -1) return null;
+      if (
+        !/^https:\/\/mega\.nz\/(file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+$/.test(url)
+        || !Number.isFinite(duration)
+        || duration < 1
+      ) return null;
 
-    const url = entry.substring(0, pos);
-    const seconds = Number(
-      entry.substring(pos + 1)
-    );
+      return {
+        url: url.replace("/file/","/embed/"),
+        duration: Math.floor(duration)
+      };
+    }).filter(Boolean);
 
-    const validUrl =
-      /^https:\/\/mega\.nz\/(file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+$/.test(url);
-
-    if (
-      !validUrl ||
-      !Number.isFinite(seconds) ||
-      seconds < 1
-    ) {
-      return null;
-    }
-
-    return {
-      url: url.replace("/file/", "/embed/"),
-      duration: Math.floor(seconds)
-    };
-  })
-  .filter(Boolean);
-
-const player = document.getElementById("player");
+const frame = document.getElementById("player");
 const status = document.getElementById("status");
-const nextButton = document.getElementById("next");
 
 let current = 0;
 let timer = null;
-let countdown = null;
-let remaining = 0;
-let startedAt = 0;
+let interval = null;
+let endTime = 0;
 
-function updateStatus() {
-  if (videos.length === 0) {
-    status.textContent =
-      "Keine gueltigen MEGA-Videos vorhanden";
-    return;
-  }
+function showStatus() {
+  const seconds = Math.max(
+    0,
+    Math.ceil((endTime-Date.now())/1000)
+  );
 
   status.textContent =
-    "Video " + (current + 1) +
+    "Video " + (current+1) +
     " / " + videos.length +
-    " | Wechsel in " + remaining + "s";
-}
-
-function clearTimers() {
-  if (timer !== null) {
-    clearTimeout(timer);
-    timer = null;
-  }
-
-  if (countdown !== null) {
-    clearInterval(countdown);
-    countdown = null;
-  }
+    " | Wechsel in " + seconds + "s";
 }
 
 function playVideo() {
-  clearTimers();
+  clearTimeout(timer);
+  clearInterval(interval);
 
-  if (videos.length === 0) {
-    player.style.display = "none";
-    updateStatus();
+  if (!videos.length) {
+    status.textContent = "Keine Videos vorhanden";
     return;
   }
 
   const video = videos[current];
 
-  remaining = video.duration;
-  startedAt = Date.now();
+  // MEGA-Link nicht veraendern
+  frame.src = video.url;
 
-  // MEGA-Player neu laden
-  // Wechselkennung verhindert identische URLs
-  const separator =
-    video.url.includes("?") ? "&" : "?";
+  endTime = Date.now() +
+    video.duration * 1000;
 
-  player.src =
-    video.url +
-    separator +
-    "slrefresh=" + Date.now();
+  showStatus();
 
-  updateStatus();
+  interval = setInterval(showStatus, 500);
 
-  countdown = setInterval(function() {
-    const elapsed = Math.floor(
-      (Date.now() - startedAt) / 1000
-    );
-
-    remaining = Math.max(
-      0,
-      video.duration - elapsed
-    );
-
-    updateStatus();
-  }, 500);
-
-  timer = setTimeout(function() {
-    nextVideo();
-  }, video.duration * 1000);
+  timer = setTimeout(nextVideo,
+    video.duration * 1000);
 }
 
 function nextVideo() {
-  if (videos.length === 0) return;
+  if (!videos.length) return;
 
-  current = (current + 1) % videos.length;
-
+  current = (current+1) % videos.length;
   playVideo();
 }
 
-nextButton.addEventListener(
-  "click",
-  nextVideo
-);
+document.getElementById("next")
+  .addEventListener("click",nextVideo);
 
-window.addEventListener(
-  "beforeunload",
-  clearTimers
-);
-
-// Player starten
 playVideo();
-
 </script>
-
 </body>
 </html>
