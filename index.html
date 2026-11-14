@@ -5,84 +5,130 @@
 <meta charset="UTF-8">
 <meta name="viewport"
       content="width=device-width, initial-scale=1">
-<title>SL Club MEGA Player</title>
+<title>SL Club MEGA Auto Playlist</title>
+
 <style>
 html, body {
   margin: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #000;
+  background: black;
   font-family: Arial, sans-serif;
 }
+
 iframe {
   width: 100%;
   height: 100%;
-  border: 0;
+  border: none;
 }
+
 #next {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
+  right: 10px;
+  bottom: 10px;
   z-index: 10;
   background: rgba(0,0,0,.8);
   color: white;
-  border: 1px solid #777;
-  padding: 12px 18px;
+  border: 1px solid #888;
+  padding: 12px;
   cursor: pointer;
 }
-#message {
+
+#status {
+  position: fixed;
+  left: 10px;
+  top: 10px;
   color: white;
-  padding: 20px;
+  z-index: 10;
 }
 </style>
 </head>
+
 <body>
 
-<div id="message"></div>
+<div id="status"></div>
+
 <iframe id="player"
   allow="autoplay; fullscreen; encrypted-media"
   allowfullscreen>
 </iframe>
 
 <button id="next" onclick="nextVideo()">
-  Nächstes Video ▶
+  NEXT ▶
 </button>
 
 <script>
 const params = new URLSearchParams(location.search);
 
-const videos = (params.get("list") || "")
+// Format:
+// MEGA-LINK@SEKUNDEN
+// Mehrere Einträge getrennt durch |
+
+const entries = (params.get("list") || "")
   .split("|")
   .map(v => v.trim())
-  .filter(v =>
-    /^https:\/\/mega\.nz\/(file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+$/.test(v)
-  )
-  .map(v => v.replace("/file/", "/embed/"));
+  .filter(Boolean);
+
+const videos = entries.map(entry => {
+  const pos = entry.lastIndexOf("@");
+
+  if (pos === -1) return null;
+
+  const url = entry.slice(0, pos);
+  const seconds = Number(entry.slice(pos + 1));
+
+  if (
+    !/^https:\/\/mega\.nz\/(file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+$/.test(url)
+    || !Number.isFinite(seconds)
+    || seconds < 1
+  ) {
+    return null;
+  }
+
+  return {
+    url: url.replace("/file/", "/embed/"),
+    duration: seconds
+  };
+}).filter(Boolean);
 
 let current = 0;
+let timer = null;
 
 const frame = document.getElementById("player");
-const message = document.getElementById("message");
+const status = document.getElementById("status");
 
 function playVideo() {
+  clearTimeout(timer);
+
   if (!videos.length) {
-    frame.style.display = "none";
-    message.textContent = "Keine MEGA-Videos vorhanden";
+    status.textContent = "Keine Videos vorhanden";
     return;
   }
 
-  message.textContent = "";
-  frame.src = videos[current];
+  const video = videos[current];
+
+  frame.src = video.url;
+
+  status.textContent =
+    "Video " + (current + 1) +
+    " / " + videos.length;
+
+  timer = setTimeout(
+    nextVideo,
+    video.duration * 1000
+  );
 }
 
 function nextVideo() {
   if (!videos.length) return;
+
   current = (current + 1) % videos.length;
   playVideo();
 }
 
 playVideo();
 </script>
+
 </body>
 </html>
