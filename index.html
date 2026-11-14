@@ -5,17 +5,13 @@
 <meta charset="UTF-8">
 <meta name="viewport"
       content="width=device-width, initial-scale=1">
-
-<title>Second Life DJ MP4 Player</title>
+<title>SL DJ Synchron Player</title>
 
 <style>
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html, body {
   margin: 0;
-  padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -23,7 +19,6 @@ html, body {
   font-family: Arial, sans-serif;
 }
 
-/* Video ohne schwarze Balken */
 #player {
   position: absolute;
   inset: 0;
@@ -33,54 +28,21 @@ html, body {
   background: black;
 }
 
-/* Kleine Statusanzeige */
-#status {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 10;
-  padding: 8px 12px;
-  color: #D4AF37;
-  background: rgba(0, 0, 0, 0.75);
-  border: 1px solid #D4AF37;
-  border-radius: 5px;
-  font-size: 15px;
-}
-
-/* Startknopf, falls Autoplay blockiert wird */
 #start {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 20;
-  padding: 16px 24px;
+  padding: 14px 22px;
+  font-size: 18px;
+  color: #D4AF37;
   background: #111;
-  color: #D4AF37;
   border: 2px solid #D4AF37;
-  border-radius: 8px;
-  font-size: 20px;
-  cursor: pointer;
+  border-radius: 6px;
 }
 
-/* Knopf fuer naechstes Video */
-#next {
-  position: fixed;
-  right: 15px;
-  bottom: 15px;
-  z-index: 10;
-  padding: 10px 18px;
-  background: rgba(0, 0, 0, 0.8);
-  color: #D4AF37;
-  border: 1px solid #D4AF37;
-  border-radius: 5px;
-  font-size: 16px;
-  cursor: pointer;
-}
-
-button[hidden] {
-  display: none;
-}
+#start[hidden] { display: none; }
 </style>
 </head>
 
@@ -92,21 +54,14 @@ button[hidden] {
        preload="auto">
 </video>
 
-<div id="status">DJ-Player wird geladen...</div>
-
-<button id="start" type="button" hidden>
+<button id="start" hidden>
   ▶ Wiedergabe starten
-</button>
-
-<button id="next" type="button">
-  NEXT ▶
 </button>
 
 <script>
 "use strict";
 
-/* AUTOMATISCHE PLAYLIST */
-
+// Alle vier Videos sind 60 Sekunden lang.
 const playlist = [
   "video1.mp4",
   "video2.mp4",
@@ -114,81 +69,135 @@ const playlist = [
   "video4.mp4"
 ];
 
-/* PLAYER */
+const VIDEO_SECONDS = 60;
+const TOTAL_SECONDS =
+  playlist.length * VIDEO_SECONDS;
+
+// Fester gemeinsamer Startzeitpunkt.
+// Auf allen Bildschirmen identisch.
+const EPOCH_SECONDS = 0;
+
+// Regelmaessige Synchronisationskontrolle.
+const SYNC_INTERVAL_MS = 2000;
+const MAX_DRIFT_SECONDS = 0.8;
 
 const player = document.getElementById("player");
-const status = document.getElementById("status");
 const start = document.getElementById("start");
-const next = document.getElementById("next");
 
-let current = 0;
+let currentIndex = -1;
+let loading = false;
+let autoplayBlocked = false;
 
-function updateStatus(message = "") {
-  status.textContent =
-    "VIDEO " + (current + 1) +
-    " / " + playlist.length +
-    (message ? " | " + message : "");
+function targetPosition() {
+  const now = Date.now() / 1000;
+
+  const elapsed =
+    ((now - EPOCH_SECONDS) % TOTAL_SECONDS
+      + TOTAL_SECONDS) % TOTAL_SECONDS;
+
+  return {
+    index: Math.floor(elapsed / VIDEO_SECONDS),
+    seconds: elapsed % VIDEO_SECONDS
+  };
 }
 
-/* WIEDERGABE STARTEN */
-
-async function tryPlay() {
+async function attemptPlay() {
   try {
     await player.play();
+    autoplayBlocked = false;
     start.hidden = true;
-    updateStatus("Wiedergabe");
   } catch (error) {
+    autoplayBlocked = true;
     start.hidden = false;
-    updateStatus("Play erforderlich");
   }
 }
 
-/* VIDEO LADEN */
+function seekTo(seconds) {
+  if (player.readyState < 1) return;
 
-function playVideo(index) {
-  if (playlist.length === 0) {
-    status.textContent = "Keine Videos vorhanden";
+  const duration = Number.isFinite(player.duration)
+    ? player.duration
+    : VIDEO_SECONDS;
+
+  player.currentTime = Math.min(
+    Math.max(0, seconds),
+    Math.max(0, duration - 0.15)
+  );
+}
+
+function loadVideo(index, seconds) {
+  currentIndex = index;
+  loading = true;
+
+  player.src = playlist[index];
+  player.load();
+
+  player.addEventListener(
+    "loadedmetadata",
+    function onMetadata() {
+      const target = targetPosition();
+
+      if (target.index !== currentIndex) {
+        loading = false;
+        syncPlayer();
+        return;
+      }
+
+      seekTo(target.seconds);
+      loading = false;
+      attemptPlay();
+    },
+    { once: true }
+  );
+}
+
+function syncPlayer() {
+  if (playlist.length === 0) return;
+
+  const target = targetPosition();
+
+  if (target.index !== currentIndex) {
+    loadVideo(target.index, target.seconds);
     return;
   }
 
-  current = index % playlist.length;
+  if (loading || player.readyState < 1) {
+    return;
+  }
 
-  player.src = playlist[current];
-  player.load();
+  const drift =
+    Math.abs(player.currentTime - target.seconds);
 
-  updateStatus("Lade...");
-  tryPlay();
+  if (drift > MAX_DRIFT_SECONDS) {
+    seekTo(target.seconds);
+  }
+
+  if (player.paused && !autoplayBlocked) {
+    attemptPlay();
+  }
 }
 
-/* NAECHSTES VIDEO */
-
-function nextVideo() {
-  playVideo((current + 1) % playlist.length);
-}
-
-/* AUTOMATISCHER WECHSEL NACH VIDEOENDE */
-
-player.addEventListener("ended", nextVideo);
-
-/* FEHLERANZEIGE */
+player.addEventListener("ended", syncPlayer);
 
 player.addEventListener("error", function() {
-  updateStatus("MP4 konnte nicht geladen werden");
+  console.error("MP4 konnte nicht geladen werden:",
+                playlist[currentIndex]);
 });
 
-/* STARTKNOPF */
+start.addEventListener("click", function() {
+  syncPlayer();
+  attemptPlay();
+});
 
-start.addEventListener("click", tryPlay);
+document.addEventListener(
+  "visibilitychange",
+  function() {
+    if (!document.hidden) syncPlayer();
+  }
+);
 
-/* NEXT-KNOPF */
-
-next.addEventListener("click", nextVideo);
-
-/* AUTOMATISCH STARTEN */
-
-playVideo(0);
-
+syncPlayer();
+setInterval(syncPlayer, SYNC_INTERVAL_MS);
 </script>
-
 </body>
 </html>
