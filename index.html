@@ -4,138 +4,105 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="strict-origin-when-cross-origin">
-
+<title>SL Club Player</title>
 <style>
 html, body {
   margin: 0;
-  padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: black;
 }
-
-#player {
-  position: absolute;
-  width: 200%;
-  height: 200%;
-  left: -50%;
-  top: -50%;
-  overflow: hidden;
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: black;
 }
-
-/* Statusanzeige vollständig ausblenden */
-#status {
+#start {
   display: none;
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 220px;
+  height: 65px;
+  z-index: 2;
+  cursor: pointer;
+  font-size: 22px;
+}
+#status {
+  position: absolute;
+  bottom: 15px;
+  left: 15px;
+  color: white;
+  font: 16px Arial;
 }
 </style>
 </head>
-
 <body>
 
-<div id="player"></div>
+<video id="player" playsinline></video>
+<button id="start">▶ START</button>
 <div id="status"></div>
 
 <script>
-const params = new URLSearchParams(window.location.search);
+const params = new URLSearchParams(location.search);
 
-const videos = (
-  params.get("list") ||
-  "jaDHR5LXM9c,HxBRIT4dQVI,t4PCLxQKR1I"
-)
-.split(",")
-.map(v => v.trim())
-.filter(v => /^[A-Za-z0-9_-]{11}$/.test(v));
+const videos = (params.get("list") || "")
+  .split("|")
+  .map(v => v.trim())
+  .filter(v => /^https:\/\/.+/i.test(v));
+
+const player = document.getElementById("player");
+const start = document.getElementById("start");
+const status = document.getElementById("status");
 
 let current = 0;
-let player = null;
-let switching = false;
-let lastTime = 0;
+let errors = 0;
 
-function status(text) {
-  document.getElementById("status").textContent = text;
-}
+function playVideo() {
+  if (!videos.length) {
+    status.textContent = "Keine MP4-Videos vorhanden";
+    return;
+  }
 
-function nextVideo() {
-  if (!player || switching || videos.length === 0) return;
+  player.src = videos[current];
+  player.load();
+  status.textContent = "";
 
-  switching = true;
-  current = (current + 1) % videos.length;
-  lastTime = 0;
-
-  status("Wechsel zu Video " + (current + 1));
-  player.loadVideoById(videos[current]);
-
-  setTimeout(function() {
-    switching = false;
-  }, 1500);
-}
-
-function onYouTubeIframeAPIReady() {
-  if (videos.length === 0) return;
-
-  player = new YT.Player("player", {
-    width: "100%",
-    height: "100%",
-    videoId: videos[0],
-
-    playerVars: {
-      autoplay: 1,
-      controls: 0,
-      playsinline: 1,
-      rel: 0,
-      origin: window.location.origin
-    },
-
-    events: {
-      onReady: function(e) {
-        e.target.playVideo();
-      },
-
-      onStateChange: function(e) {
-        if (e.data === YT.PlayerState.ENDED) {
-          nextVideo();
-        }
-      },
-
-      onError: function(e) {
-        status("YouTube Fehler " + e.data);
-      }
-    }
+  player.play().then(() => {
+    start.style.display = "none";
+    errors = 0;
+  }).catch(() => {
+    start.style.display = "block";
   });
 }
 
-setInterval(function() {
-  if (!player || switching) return;
+function nextVideo() {
+  current = (current + 1) % videos.length;
+  playVideo();
+}
 
-  const duration = player.getDuration();
-  const time = player.getCurrentTime();
-  const state = player.getPlayerState();
+player.addEventListener("ended", nextVideo);
 
-  if (!duration || !Number.isFinite(time)) return;
-
-  if (time > 0 && duration - time < 0.8) {
-    nextVideo();
+player.addEventListener("error", () => {
+  errors++;
+  if (errors >= videos.length) {
+    status.textContent = "Keine Videos abspielbar";
     return;
   }
+  nextVideo();
+});
 
-  if (
-    state === YT.PlayerState.PLAYING &&
-    lastTime > 2 &&
-    time < lastTime - 2
-  ) {
-    nextVideo();
-    return;
-  }
+start.addEventListener("click", () => {
+  player.play().then(() => {
+    start.style.display = "none";
+  }).catch(() => {
+    status.textContent = "Wiedergabe blockiert";
+  });
+});
 
-  lastTime = time;
-}, 250);
-
-const script = document.createElement("script");
-script.src = "https://www.youtube.com/iframe_api";
-document.head.appendChild(script);
+playVideo();
 </script>
-
 </body>
 </html>
