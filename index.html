@@ -5,11 +5,17 @@
 <meta charset="UTF-8">
 <meta name="viewport"
       content="width=device-width, initial-scale=1">
-<title>SL Club MEGA Auto Playlist</title>
+
+<title>SL Club MEGA Auto Player</title>
 
 <style>
+* {
+  box-sizing: border-box;
+}
+
 html, body {
   margin: 0;
+  padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -17,117 +23,206 @@ html, body {
   font-family: Arial, sans-serif;
 }
 
-iframe {
+#player {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   border: none;
-}
-
-#next {
-  position: fixed;
-  right: 10px;
-  bottom: 10px;
-  z-index: 10;
-  background: rgba(0,0,0,.8);
-  color: white;
-  border: 1px solid #888;
-  padding: 12px;
-  cursor: pointer;
+  background: black;
 }
 
 #status {
   position: fixed;
-  left: 10px;
   top: 10px;
+  left: 10px;
+  z-index: 100;
   color: white;
-  z-index: 10;
+  background: rgba(0,0,0,0.8);
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-size: 17px;
+  pointer-events: none;
+}
+
+#next {
+  position: fixed;
+  right: 15px;
+  bottom: 15px;
+  z-index: 100;
+  padding: 12px 20px;
+  background: rgba(0,0,0,0.85);
+  color: white;
+  border: 1px solid #888;
+  border-radius: 5px;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+#next:hover {
+  background: #333;
 }
 </style>
 </head>
 
 <body>
 
-<div id="status"></div>
-
-<iframe id="player"
+<iframe
+  id="player"
   allow="autoplay; fullscreen; encrypted-media"
   allowfullscreen>
 </iframe>
 
-<button id="next" onclick="nextVideo()">
+<div id="status">Player wird geladen...</div>
+
+<button id="next" type="button">
   NEXT ▶
 </button>
 
 <script>
-const params = new URLSearchParams(location.search);
+"use strict";
 
-// Format:
-// MEGA-LINK@SEKUNDEN
-// Mehrere Einträge getrennt durch |
+const params = new URLSearchParams(
+  window.location.search
+);
 
-const entries = (params.get("list") || "")
+// Eintrag: MEGA-LINK@SEKUNDEN
+// Mehrere Eintraege mit | trennen
+
+const rawList = params.get("list") || "";
+
+const videos = rawList
   .split("|")
-  .map(v => v.trim())
+  .map(entry => {
+    entry = entry.trim();
+
+    const pos = entry.lastIndexOf("@");
+
+    if (pos === -1) return null;
+
+    const url = entry.substring(0, pos);
+    const seconds = Number(
+      entry.substring(pos + 1)
+    );
+
+    const validUrl =
+      /^https:\/\/mega\.nz\/(file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+$/.test(url);
+
+    if (
+      !validUrl ||
+      !Number.isFinite(seconds) ||
+      seconds < 1
+    ) {
+      return null;
+    }
+
+    return {
+      url: url.replace("/file/", "/embed/"),
+      duration: Math.floor(seconds)
+    };
+  })
   .filter(Boolean);
 
-const videos = entries.map(entry => {
-  const pos = entry.lastIndexOf("@");
-
-  if (pos === -1) return null;
-
-  const url = entry.slice(0, pos);
-  const seconds = Number(entry.slice(pos + 1));
-
-  if (
-    !/^https:\/\/mega\.nz\/(file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+$/.test(url)
-    || !Number.isFinite(seconds)
-    || seconds < 1
-  ) {
-    return null;
-  }
-
-  return {
-    url: url.replace("/file/", "/embed/"),
-    duration: seconds
-  };
-}).filter(Boolean);
+const player = document.getElementById("player");
+const status = document.getElementById("status");
+const nextButton = document.getElementById("next");
 
 let current = 0;
 let timer = null;
+let countdown = null;
+let remaining = 0;
+let startedAt = 0;
 
-const frame = document.getElementById("player");
-const status = document.getElementById("status");
+function updateStatus() {
+  if (videos.length === 0) {
+    status.textContent =
+      "Keine gueltigen MEGA-Videos vorhanden";
+    return;
+  }
+
+  status.textContent =
+    "Video " + (current + 1) +
+    " / " + videos.length +
+    " | Wechsel in " + remaining + "s";
+}
+
+function clearTimers() {
+  if (timer !== null) {
+    clearTimeout(timer);
+    timer = null;
+  }
+
+  if (countdown !== null) {
+    clearInterval(countdown);
+    countdown = null;
+  }
+}
 
 function playVideo() {
-  clearTimeout(timer);
+  clearTimers();
 
-  if (!videos.length) {
-    status.textContent = "Keine Videos vorhanden";
+  if (videos.length === 0) {
+    player.style.display = "none";
+    updateStatus();
     return;
   }
 
   const video = videos[current];
 
-  frame.src = video.url;
+  remaining = video.duration;
+  startedAt = Date.now();
 
-  status.textContent =
-    "Video " + (current + 1) +
-    " / " + videos.length;
+  // MEGA-Player neu laden
+  // Wechselkennung verhindert identische URLs
+  const separator =
+    video.url.includes("?") ? "&" : "?";
 
-  timer = setTimeout(
-    nextVideo,
-    video.duration * 1000
-  );
+  player.src =
+    video.url +
+    separator +
+    "slrefresh=" + Date.now();
+
+  updateStatus();
+
+  countdown = setInterval(function() {
+    const elapsed = Math.floor(
+      (Date.now() - startedAt) / 1000
+    );
+
+    remaining = Math.max(
+      0,
+      video.duration - elapsed
+    );
+
+    updateStatus();
+  }, 500);
+
+  timer = setTimeout(function() {
+    nextVideo();
+  }, video.duration * 1000);
 }
 
 function nextVideo() {
-  if (!videos.length) return;
+  if (videos.length === 0) return;
 
   current = (current + 1) % videos.length;
+
   playVideo();
 }
 
+nextButton.addEventListener(
+  "click",
+  nextVideo
+);
+
+window.addEventListener(
+  "beforeunload",
+  clearTimers
+);
+
+// Player starten
 playVideo();
+
 </script>
 
 </body>
