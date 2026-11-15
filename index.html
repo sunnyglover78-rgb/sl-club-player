@@ -3,323 +3,201 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width, initial-scale=1">
-
-<title>SL Club Player – 5 Videos Sync</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SL Club Video Player</title>
 
 <style>
-* {
-  box-sizing: border-box;
-}
-
 html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: black;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: black;
 }
 
 #player {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  width: 100vw;
-  height: 100vh;
-  object-fit: cover;
-  object-position: center;
-  transform: translate(-50%, -50%) scale(1.12);
-  background: black;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: translate(-50%, -50%) scale(1.12);
+    background: black;
 }
 
-#status {
-  position: fixed;
-  bottom: 8px;
-  left: 8px;
-  padding: 6px 10px;
-  color: white;
-  background: rgba(0,0,0,0.65);
-  font: 13px Arial, sans-serif;
+#startButton {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 18px 30px;
+    font-size: 22px;
+    color: white;
+    background: #222;
+    border: 2px solid white;
+    cursor: pointer;
+    z-index: 10;
 }
 
-#start {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%,-50%);
-  padding: 15px 25px;
-  background: #111;
-  color: white;
-  border: 2px solid white;
-  font: 20px Arial, sans-serif;
-  cursor: pointer;
+#error {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 16px;
+    z-index: 5;
 }
 </style>
 </head>
 
 <body>
 
-<video
-  id="player"
-  autoplay
-  muted
-  playsinline
-  preload="auto">
-</video>
+<video id="player" autoplay muted playsinline preload="auto"></video>
 
-<div id="status">
-  Videos werden geladen...
-</div>
-
-<button id="start" hidden>
-  ▶ Video starten
-</button>
+<button id="startButton">▶ VIDEO STARTEN</button>
+<div id="error"></div>
 
 <script>
-"use strict";
-
-// Fünf Videos.
-// Das frühere Video 6 heißt jetzt Video 5.
 const playlist = [
-  "video1.mp4",
-  "video2.mp4",
-  "video3.mp4",
-  "video4.mp4",
-  "video5.mp4"
+    "video1.mp4",
+    "video2.mp4",
+    "video3.mp4",
+    "video4.mp4"
 ];
 
 const player = document.getElementById("player");
-const status = document.getElementById("status");
-const start = document.getElementById("start");
+const startButton = document.getElementById("startButton");
+const errorBox = document.getElementById("error");
 
-const durations = [];
-
-let ready = false;
+let durations = [];
 let currentIndex = -1;
-let loading = false;
-let loadId = 0;
-let blocked = false;
-let lastProgress = Date.now();
-let previousTime = -1;
+let switching = false;
 
-function showStatus(text) {
-  status.hidden = false;
-  status.textContent = text;
-}
-
-// Videolängen automatisch erkennen.
 function getDuration(file) {
-  return new Promise((resolve, reject) => {
-    const probe = document.createElement("video");
-    probe.preload = "metadata";
+    return new Promise((resolve, reject) => {
+        const video = document.createElement("video");
+        video.preload = "metadata";
 
-    probe.onloadedmetadata = () => {
-      const duration = probe.duration;
+        video.onloadedmetadata = () => {
+            const duration = video.duration;
+            video.removeAttribute("src");
+            video.load();
 
-      if (Number.isFinite(duration) && duration > 0) {
-        probe.removeAttribute("src");
-        probe.load();
-        resolve(duration);
-      } else {
-        reject(new Error(
-          "Videolänge nicht erkannt: " + file
-        ));
-      }
-    };
+            if (Number.isFinite(duration) && duration > 0) {
+                resolve(duration);
+            } else {
+                reject("Ungültige Videodauer: " + file);
+            }
+        };
 
-    probe.onerror = () => {
-      reject(new Error(
-        "Video nicht gefunden: " + file
-      ));
-    };
+        video.onerror = () => {
+            reject("Video kann nicht geladen werden: " + file);
+        };
 
-    probe.src = file;
-  });
+        video.src = file;
+    });
 }
 
-// Gemeinsame Zeit für alle Bildschirme.
 function getTarget() {
-  const total = durations.reduce(
-    (sum, duration) => sum + duration, 0
-  );
+    const total = durations.reduce((a, b) => a + b, 0);
+    let time = (Date.now() / 1000) % total;
 
-  let time = (Date.now() / 1000) % total;
-
-  for (let i = 0; i < durations.length; i++) {
-    if (time < durations[i]) {
-      return {
-        index: i,
-        time: time
-      };
-    }
-
-    time -= durations[i];
-  }
-
-  return { index: 0, time: 0 };
-}
-
-// Wiedergabe starten.
-async function playVideo() {
-  try {
-    await player.play();
-    blocked = false;
-    start.hidden = true;
-    status.hidden = true;
-  } catch (error) {
-    blocked = true;
-    start.hidden = false;
-    showStatus("Zum Starten klicken");
-  }
-}
-
-// Wiedergabeposition korrigieren.
-function seekTo(time) {
-  if (player.readyState < 1) return;
-
-  const safeTime = Math.max(
-    0,
-    Math.min(time, player.duration - 0.1)
-  );
-
-  if (Number.isFinite(safeTime)) {
-    player.currentTime = safeTime;
-  }
-}
-
-// Synchronisierung.
-function synchronize() {
-  if (!ready) return;
-
-  const target = getTarget();
-
-  // Neues Video laden.
-  if (target.index !== currentIndex) {
-    if (loading) return;
-
-    loading = true;
-    currentIndex = target.index;
-
-    const id = ++loadId;
-
-    showStatus(
-      "Lade " + playlist[currentIndex]
-    );
-
-    player.onloadedmetadata = () => {
-      if (id !== loadId) return;
-
-      loading = false;
-
-      const latest = getTarget();
-
-      if (latest.index !== currentIndex) {
-        synchronize();
-        return;
-      }
-
-      seekTo(latest.time);
-
-      lastProgress = Date.now();
-      previousTime = -1;
-
-      playVideo();
-    };
-
-    player.src = playlist[currentIndex];
-    player.load();
-    return;
-  }
-
-  if (loading || player.readyState < 2) return;
-
-  // Zeitabweichung korrigieren.
-  const difference = Math.abs(
-    player.currentTime - target.time
-  );
-
-  if (difference > 0.5) {
-    seekTo(target.time);
-  }
-
-  // Prüfen, ob das Video noch läuft.
-  if (
-    Math.abs(player.currentTime - previousTime) > 0.1
-  ) {
-    lastProgress = Date.now();
-    previousTime = player.currentTime;
-  }
-
-  // Hängende Wiedergabe korrigieren.
-  if (
-    !player.paused &&
-    Date.now() - lastProgress > 7000
-  ) {
-    lastProgress = Date.now();
-    seekTo(target.time);
-    player.pause();
-    playVideo();
-  }
-
-  if (player.paused && !blocked) {
-    playVideo();
-  }
-}
-
-// Startknopf.
-start.onclick = () => {
-  blocked = false;
-  playVideo();
-};
-
-// Fehler anzeigen.
-player.onerror = () => {
-  showStatus(
-    "Ladefehler: " + playlist[currentIndex]
-  );
-
-  loading = false;
-  currentIndex = -1;
-};
-
-// Nach Videoende neu synchronisieren.
-player.onended = () => {
-  synchronize();
-};
-
-// Initialisierung.
-async function initialize() {
-  try {
-    for (const file of playlist) {
-      showStatus("Prüfe " + file);
-
-      const duration = await getDuration(file);
-      durations.push(duration);
-    }
-
-    ready = true;
-    status.hidden = true;
-
-    synchronize();
-
-    // Jede Sekunde synchronisieren.
-    setInterval(synchronize, 1000);
-
-    document.addEventListener(
-      "visibilitychange",
-      () => {
-        if (!document.hidden) {
-          synchronize();
+    for (let i = 0; i < durations.length; i++) {
+        if (time < durations[i]) {
+            return { index: i, time: time };
         }
-      }
-    );
+        time -= durations[i];
+    }
 
-  } catch (error) {
-    showStatus(error.message);
-    console.error(error);
-  }
+    return { index: 0, time: 0 };
+}
+
+function showStartButton() {
+    startButton.style.display = "block";
+}
+
+function tryPlay() {
+    const promise = player.play();
+
+    if (promise && typeof promise.catch === "function") {
+        promise.then(() => {
+            startButton.style.display = "none";
+        }).catch(showStartButton);
+    }
+}
+
+function synchronize() {
+    if (!durations.length || switching) return;
+
+    const target = getTarget();
+
+    if (currentIndex !== target.index) {
+        switching = true;
+        currentIndex = target.index;
+
+        player.onloadedmetadata = () => {
+            const updated = getTarget();
+
+            if (updated.index !== currentIndex) {
+                switching = false;
+                synchronize();
+                return;
+            }
+
+            try {
+                player.currentTime = Math.max(0, updated.time);
+            } catch (e) {}
+
+            switching = false;
+            tryPlay();
+        };
+
+        player.src = playlist[target.index];
+        player.load();
+        return;
+    }
+
+    if (player.readyState >= 1) {
+        if (Math.abs(player.currentTime - target.time) > 0.5) {
+            try {
+                player.currentTime = target.time;
+            } catch (e) {}
+        }
+
+        if (player.paused) {
+            tryPlay();
+        }
+    }
+}
+
+startButton.addEventListener("click", () => {
+    startButton.style.display = "none";
+    synchronize();
+    tryPlay();
+});
+
+player.addEventListener("error", () => {
+    errorBox.textContent =
+        "Fehler beim Abspielen: " + playlist[currentIndex];
+});
+
+async function initialize() {
+    try {
+        for (const file of playlist) {
+            durations.push(await getDuration(file));
+        }
+
+        errorBox.textContent = "";
+        synchronize();
+        setInterval(synchronize, 1000);
+
+    } catch (error) {
+        errorBox.textContent = error;
+    }
 }
 
 initialize();
