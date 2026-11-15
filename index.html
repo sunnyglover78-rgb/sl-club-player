@@ -3,45 +3,56 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SL Club Player – 6 Videos Sync</title>
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
+
+<title>SL Club Player – 6 Videos</title>
 
 <style>
+* {
+  box-sizing: border-box;
+}
+
 html, body {
   margin: 0;
+  padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: #000;
 }
 
-video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+#player {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
   background: #000;
 }
 
-#message {
+#status {
   position: fixed;
-  bottom: 10px;
-  left: 10px;
+  bottom: 8px;
+  left: 8px;
   color: white;
-  background: rgba(0,0,0,0.7);
-  padding: 8px;
-  font: 14px Arial, sans-serif;
+  background: rgba(0,0,0,0.65);
+  padding: 6px 10px;
+  font: 13px Arial, sans-serif;
 }
 
 #start {
   position: fixed;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 16px 24px;
-  background: #222;
+  transform: translate(-50%,-50%);
+  padding: 15px 25px;
+  background: #111;
   color: white;
   border: 2px solid white;
   font: 20px Arial, sans-serif;
+  cursor: pointer;
 }
 </style>
 </head>
@@ -56,13 +67,16 @@ video {
   preload="auto">
 </video>
 
-<div id="message">Videos werden geladen...</div>
-<button id="start" hidden>▶ Starten</button>
+<div id="status">Videos werden geladen...</div>
+
+<button id="start" hidden>
+  ▶ Video starten
+</button>
 
 <script>
 "use strict";
 
-// Alle Videos liegen neben der index.html.
+// Alle sechs Videos.
 const playlist = [
   "video1.mp4",
   "video2.mp4",
@@ -73,18 +87,26 @@ const playlist = [
 ];
 
 const player = document.getElementById("player");
-const message = document.getElementById("message");
-const startButton = document.getElementById("start");
+const status = document.getElementById("status");
+const start = document.getElementById("start");
 
 const durations = [];
 
 let ready = false;
 let currentIndex = -1;
-let loadToken = 0;
+let loading = false;
+let loadId = 0;
 let blocked = false;
+let lastProgress = Date.now();
+let previousTime = -1;
 
-// Videolänge automatisch erkennen.
-function readDuration(file) {
+function showStatus(text) {
+  status.hidden = false;
+  status.textContent = text;
+}
+
+// Videolängen automatisch erkennen.
+function getDuration(file) {
   return new Promise((resolve, reject) => {
     const probe = document.createElement("video");
     probe.preload = "metadata";
@@ -97,47 +119,69 @@ function readDuration(file) {
         probe.load();
         resolve(duration);
       } else {
-        reject(new Error("Ungültige Länge: " + file));
+        reject(new Error(
+          "Videolänge nicht erkannt: " + file
+        ));
       }
     };
 
     probe.onerror = () => {
-      reject(new Error("Datei nicht ladbar: " + file));
+      reject(new Error(
+        "Video nicht gefunden: " + file
+      ));
     };
 
     probe.src = file;
   });
 }
 
-// Gemeinsame Zeitachse für alle Bildschirme.
+// Gemeinsame Zeit für alle Bildschirme.
 function getTarget() {
-  const total = durations.reduce((a, b) => a + b, 0);
+  const total = durations.reduce(
+    (sum, duration) => sum + duration, 0
+  );
 
-  let position = (Date.now() / 1000) % total;
+  let time = (Date.now() / 1000) % total;
 
   for (let i = 0; i < durations.length; i++) {
-    if (position < durations[i]) {
+    if (time < durations[i]) {
       return {
         index: i,
-        time: position
+        time: time
       };
     }
 
-    position -= durations[i];
+    time -= durations[i];
   }
 
   return { index: 0, time: 0 };
 }
 
 // Wiedergabe starten.
-async function tryPlay() {
+async function playVideo() {
   try {
     await player.play();
     blocked = false;
-    startButton.hidden = true;
+    start.hidden = true;
+    status.hidden = true;
   } catch (error) {
     blocked = true;
-    startButton.hidden = false;
+    start.hidden = false;
+    showStatus("Zum Starten klicken");
+  }
+}
+
+// Wiedergabeposition korrigieren.
+function seekTo(time) {
+  if (player.readyState < 1) return;
+
+  const safeTime = Math.max(
+    0,
+    Math.min(time, player.duration - 0.1)
+  );
+
+  if (Number.isFinite(safeTime)) {
+    player.currentTime = safeTime;
   }
 }
 
@@ -147,33 +191,37 @@ function synchronize() {
 
   const target = getTarget();
 
-  // Anderes Video erforderlich.
+  // Neues Video laden.
   if (target.index !== currentIndex) {
-    currentIndex = target.index;
-    const token = ++loadToken;
+    if (loading) return;
 
-    message.hidden = false;
-    message.textContent =
-      "Lade " + playlist[currentIndex];
+    loading = true;
+    currentIndex = target.index;
+
+    const id = ++loadId;
+
+    showStatus(
+      "Lade " + playlist[currentIndex]
+    );
 
     player.onloadedmetadata = () => {
-      if (token !== loadToken) return;
+      if (id !== loadId) return;
+
+      loading = false;
 
       const latest = getTarget();
 
-      // Falls inzwischen ein anderes Video dran ist.
       if (latest.index !== currentIndex) {
         synchronize();
         return;
       }
 
-      player.currentTime = Math.min(
-        latest.time,
-        Math.max(0, player.duration - 0.1)
-      );
+      seekTo(latest.time);
 
-      message.hidden = true;
-      tryPlay();
+      lastProgress = Date.now();
+      previousTime = -1;
+
+      playVideo();
     };
 
     player.src = playlist[currentIndex];
@@ -181,65 +229,93 @@ function synchronize() {
     return;
   }
 
-  if (player.readyState < 1) return;
+  if (loading || player.readyState < 2) return;
 
+  // Zeitabweichung korrigieren.
   const difference = Math.abs(
     player.currentTime - target.time
   );
 
-  // Abweichung über 0,5 Sekunden korrigieren.
   if (difference > 0.5) {
-    player.currentTime = Math.min(
-      target.time,
-      Math.max(0, player.duration - 0.1)
-    );
+    seekTo(target.time);
+  }
+
+  // Prüfen, ob das Video noch läuft.
+  if (
+    Math.abs(player.currentTime - previousTime) > 0.1
+  ) {
+    lastProgress = Date.now();
+    previousTime = player.currentTime;
+  }
+
+  // Hängende Wiedergabe korrigieren.
+  if (
+    !player.paused &&
+    Date.now() - lastProgress > 7000
+  ) {
+    lastProgress = Date.now();
+    seekTo(target.time);
+    player.pause();
+    playVideo();
   }
 
   if (player.paused && !blocked) {
-    tryPlay();
+    playVideo();
   }
 }
 
-// Manuell starten, falls Autoplay blockiert wird.
-startButton.onclick = () => {
+// Startknopf.
+start.onclick = () => {
   blocked = false;
-  tryPlay();
+  playVideo();
 };
 
-player.onended = synchronize;
-
+// Fehler anzeigen.
 player.onerror = () => {
-  message.hidden = false;
-  message.textContent =
-    "Fehler beim Laden von " + playlist[currentIndex];
+  showStatus(
+    "Ladefehler: " + playlist[currentIndex]
+  );
+
+  loading = false;
+  currentIndex = -1;
+
+  // Beim nächsten Sync erneut versuchen.
 };
 
-// Videos vorbereiten.
+// Nach Videoende neu synchronisieren.
+player.onended = () => {
+  synchronize();
+};
+
+// Initialisierung.
 async function initialize() {
   try {
     for (const file of playlist) {
-      message.textContent = "Prüfe " + file;
-      const duration = await readDuration(file);
+      showStatus("Prüfe " + file);
+
+      const duration = await getDuration(file);
       durations.push(duration);
     }
 
     ready = true;
-    message.hidden = true;
+    status.hidden = true;
 
     synchronize();
 
-    setInterval(synchronize, 2000);
+    // Jede Sekunde synchronisieren.
+    setInterval(synchronize, 1000);
 
     document.addEventListener(
       "visibilitychange",
       () => {
-        if (!document.hidden) synchronize();
+        if (!document.hidden) {
+          synchronize();
+        }
       }
     );
 
   } catch (error) {
-    message.hidden = false;
-    message.textContent = error.message;
+    showStatus(error.message);
     console.error(error);
   }
 }
