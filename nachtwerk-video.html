@@ -4,60 +4,52 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport"
-content="width=device-width, initial-scale=1">
+      content="width=device-width, initial-scale=1.0">
+
+<title>NACHTWERK Video</title>
+
 <style>
 html, body {
     margin: 0;
+    padding: 0;
     width: 100%;
     height: 100%;
-    background: black;
     overflow: hidden;
+    background: black;
 }
+
 video {
+    position: absolute;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center;
-}
-#status {
-    position: fixed;
-    bottom: 10px;
-    left: 10px;
-    color: white;
-    font: 16px Arial;
+    object-position: center center;
 }
 </style>
 </head>
-<body>
 
+<body>
 <video id="player"
-       autoplay muted loop playsinline controls>
+       autoplay
+       muted
+       loop
+       playsinline
+       preload="auto">
+
+    <source
+      src="NACHTWERK_Industrial_20s_H264.mp4"
+      type="video/mp4">
+
 </video>
 
-<div id="status">Video wird geladen...</div>
-
 <script>
-const video = document.getElementById("player");
-const status = document.getElementById("status");
+const player = document.getElementById("player");
 
-video.src =
-"https://raw.githubusercontent.com/sunnyglover78-rgb/sl-club-player/main/NACHTWERK_Industrial_20s_Pulsierend.mp4";
+player.muted = true;
 
-video.addEventListener("playing", () => {
-    status.textContent = "";
-});
-
-video.addEventListener("error", () => {
-    status.textContent =
-        "Fehler beim Laden des Videos: " +
-        (video.error ? video.error.code : "unbekannt");
-});
-
-video.play().catch(() => {
-    status.textContent =
-        "Bitte Wiedergabetaste drücken.";
+player.play().catch(() => {
+    console.log("Autoplay nicht möglich");
 });
 </script>
-
 </body>
 </html>
