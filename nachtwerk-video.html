@@ -6,12 +6,11 @@
 <meta name="viewport"
       content="width=device-width, initial-scale=1.0">
 
-<title>NACHTWERK Video</title>
+<title>NACHTWERK Sync Player</title>
 
 <style>
 html, body {
     margin: 0;
-    padding: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
@@ -19,37 +18,62 @@ html, body {
 }
 
 video {
-    position: absolute;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center center;
+    object-position: center;
 }
 </style>
 </head>
 
 <body>
-<video id="player"
-       autoplay
-       muted
-       loop
-       playsinline
-       preload="auto">
 
+<video id="player"
+       autoplay muted loop playsinline
+       preload="auto">
     <source
       src="NACHTWERK_Industrial_20s_H264.mp4"
       type="video/mp4">
-
 </video>
 
 <script>
-const player = document.getElementById("player");
+const video = document.getElementById("player");
 
-player.muted = true;
+function synchronize() {
+    if (!Number.isFinite(video.duration) ||
+        video.duration <= 0) return;
 
-player.play().catch(() => {
-    console.log("Autoplay nicht möglich");
+    const duration = video.duration;
+
+    // Gemeinsame Uhrzeit fuer beide Leinwaende
+    const target =
+        (Date.now() / 1000) % duration;
+
+    // Kuerzesten Abstand bei Endlosschleife berechnen
+    let difference = target - video.currentTime;
+
+    if (difference > duration / 2)
+        difference -= duration;
+
+    if (difference < -duration / 2)
+        difference += duration;
+
+    // Nur bei sichtbarer Abweichung korrigieren
+    if (Math.abs(difference) > 0.35) {
+        video.currentTime = target;
+    }
+
+    video.play().catch(() => {});
+}
+
+video.addEventListener("loadedmetadata", synchronize);
+
+video.addEventListener("canplay", () => {
+    video.play().catch(() => {});
 });
+
+setInterval(synchronize, 2000);
 </script>
+
 </body>
 </html>
